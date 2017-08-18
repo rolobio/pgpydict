@@ -1,16 +1,43 @@
 import unittest
 from dictorm.pg import Select, Insert, Update, Delete, Or, Xor, And, Column, set_sort_keys
+from dictorm.pg import Join, LeftJoin, RightJoin, InnerJoin, FullOuterJoin, FullJoin
+from dictorm import Table
 
 class PersonTable(object):
     '''fake DictORM Table for testing'''
 
     name = 'person'
 
+    def __init__(self):
+        self.fks = {}
+        self.refs = {}
+
+
     def __getitem__(self, key):
+        if key in self.refs:
+            return self.refs[key]
         return Column(self, key)
+
+    __setitem__ = Table.__setitem__
+
+
+
+class CarTable(PersonTable):
+    '''fake DictORM Table for testing'''
+
+    name = 'car'
+
+
+
+class DeptTable(PersonTable):
+    '''fake DictORM Table for testing'''
+
+    name = 'dept'
 
 
 Person = PersonTable()
+Car = CarTable()
+Dept = DeptTable()
 set_sort_keys(True)
 
 
@@ -23,34 +50,34 @@ class TestSelect(unittest.TestCase):
         q = Select('some_table', And())
         self.assertEqual(str(q), 'SELECT * FROM "some_table"')
         q = Select('some_table', Person['name'] == 'Bob')
-        self.assertEqual(str(q), 'SELECT * FROM "some_table" WHERE "name"=%s')
+        self.assertEqual(str(q), 'SELECT * FROM "some_table" WHERE "person"."name"=%s')
         q = Select('some_table', 'Bob' == Person['name'])
-        self.assertEqual(str(q), 'SELECT * FROM "some_table" WHERE "name"=%s')
+        self.assertEqual(str(q), 'SELECT * FROM "some_table" WHERE "person"."name"=%s')
         q = Select('some_table', Person['name'] > 'Bob')
-        self.assertEqual(str(q), 'SELECT * FROM "some_table" WHERE "name">%s')
+        self.assertEqual(str(q), 'SELECT * FROM "some_table" WHERE "person"."name">%s')
         q = Select('some_table', Person['name'] >= 'Bob')
-        self.assertEqual(str(q), 'SELECT * FROM "some_table" WHERE "name">=%s')
+        self.assertEqual(str(q), 'SELECT * FROM "some_table" WHERE "person"."name">=%s')
         q = Select('some_table', Person['name'] < 'Bob')
-        self.assertEqual(str(q), 'SELECT * FROM "some_table" WHERE "name"<%s')
+        self.assertEqual(str(q), 'SELECT * FROM "some_table" WHERE "person"."name"<%s')
         q = Select('some_table', Person['name'] <= 'Bob')
-        self.assertEqual(str(q), 'SELECT * FROM "some_table" WHERE "name"<=%s')
+        self.assertEqual(str(q), 'SELECT * FROM "some_table" WHERE "person"."name"<=%s')
         q = Select('some_table', Person['name'] != 'Bob')
-        self.assertEqual(str(q), 'SELECT * FROM "some_table" WHERE "name"!=%s')
+        self.assertEqual(str(q), 'SELECT * FROM "some_table" WHERE "person"."name"!=%s')
 
 
     def test_returning(self):
         q = Select('some_table', Person['name'] == 'Bob', returning='*')
-        self.assertEqual(str(q), 'SELECT * FROM "some_table" WHERE "name"=%s RETURNING *')
+        self.assertEqual(str(q), 'SELECT * FROM "some_table" WHERE "person"."name"=%s RETURNING *')
         self.assertEqual(q.build(), (
-            'SELECT * FROM "some_table" WHERE "name"=%s RETURNING *',
+            'SELECT * FROM "some_table" WHERE "person"."name"=%s RETURNING *',
             ['Bob',]))
 
 
         q = Select('some_table', 'Bob' == Person['name'], returning='id')
         self.assertEqual(str(q),
-                'SELECT * FROM "some_table" WHERE "name"=%s RETURNING "id"')
+                'SELECT * FROM "some_table" WHERE "person"."name"=%s RETURNING "id"')
         self.assertEqual(q.build(), (
-            'SELECT * FROM "some_table" WHERE "name"=%s RETURNING "id"',
+            'SELECT * FROM "some_table" WHERE "person"."name"=%s RETURNING "id"',
             ['Bob',]
             ))
 
@@ -59,11 +86,11 @@ class TestSelect(unittest.TestCase):
         bob_name = Person['name'] == 'Bob'
         bob_car = Person['car_id'] == 2
         q = Select('some_table', bob_name.Or(bob_car))
-        self.assertEqual(str(q), 'SELECT * FROM "some_table" WHERE "name"=%s OR "car_id"=%s')
+        self.assertEqual(str(q), 'SELECT * FROM "some_table" WHERE "person"."name"=%s OR "person"."car_id"=%s')
         q = Select('some_table', bob_name.And(bob_car))
-        self.assertEqual(str(q), 'SELECT * FROM "some_table" WHERE "name"=%s AND "car_id"=%s')
+        self.assertEqual(str(q), 'SELECT * FROM "some_table" WHERE "person"."name"=%s AND "person"."car_id"=%s')
         q = Select('some_table', bob_name.Xor(bob_car))
-        self.assertEqual(str(q), 'SELECT * FROM "some_table" WHERE "name"=%s XOR "car_id"=%s')
+        self.assertEqual(str(q), 'SELECT * FROM "some_table" WHERE "person"."name"=%s XOR "person"."car_id"=%s')
 
 
     def test_logical_groups(self):
@@ -73,14 +100,14 @@ class TestSelect(unittest.TestCase):
             ))
 
         self.assertEqual(str(q),
-                'SELECT * FROM "some_table" WHERE ("name"=%s AND "car_id"=%s) XOR "name"=%s')
+                'SELECT * FROM "some_table" WHERE ("person"."name"=%s AND "person"."car_id"=%s) XOR "person"."name"=%s')
 
         q = Select('some_table', Or(
             And(Person['name'] >= 'Bob', Person['car_id'] == 2.3),
             And(Person['name'] <= 'Alice', Person['car_id'] != 3)
             ))
         self.assertEqual(str(q),
-                'SELECT * FROM "some_table" WHERE ("name">=%s AND "car_id"=%s) OR ("name"<=%s AND "car_id"!=%s)')
+                'SELECT * FROM "some_table" WHERE ("person"."name">=%s AND "person"."car_id"=%s) OR ("person"."name"<=%s AND "person"."car_id"!=%s)')
 
 
     def test_build(self):
@@ -90,14 +117,14 @@ class TestSelect(unittest.TestCase):
         """
         q = Select('other_table', Person['name'] == 'Steve')
         self.assertEqual(q.build(),
-                ('SELECT * FROM "other_table" WHERE "name"=%s',
+                ('SELECT * FROM "other_table" WHERE "person"."name"=%s',
                     ['Steve',]
                     )
                 )
 
         q = Select('other_table', And(Person['name'] == 'Steve', Person['car_id'] == 12))
         self.assertEqual(q.build(),
-                ('SELECT * FROM "other_table" WHERE "name"=%s AND "car_id"=%s',
+                ('SELECT * FROM "other_table" WHERE "person"."name"=%s AND "person"."car_id"=%s',
                     ['Steve', 12]
                     )
                 )
@@ -108,24 +135,24 @@ class TestSelect(unittest.TestCase):
             )
             )
         self.assertEqual(q.build(),
-                ('SELECT * FROM "other_table" WHERE ("name"=%s AND "car_id"=%s) OR ("name"=%s AND "car_id"=%s)',
+                ('SELECT * FROM "other_table" WHERE ("person"."name"=%s AND "person"."car_id"=%s) OR ("person"."name"=%s AND "person"."car_id"=%s)',
                     ['Steve', 12, 'Bob', 1]
                     )
                 )
 
         q = Select('other_table', Person['name'].Is('Bob'))
         self.assertEqual(q.build(),
-                ('SELECT * FROM "other_table" WHERE "name" IS %s',
+                ('SELECT * FROM "other_table" WHERE "person"."name" IS %s',
                 ['Bob',])
                 )
         q = Select('other_table', Person['name'].IsNot('Bob'))
         self.assertEqual(q.build(),
-                ('SELECT * FROM "other_table" WHERE "name" IS NOT %s',
+                ('SELECT * FROM "other_table" WHERE "person"."name" IS NOT %s',
                 ['Bob',])
                 )
         q = Select('other_table', Person['name'].IsNull())
         self.assertEqual(q.build(),
-                ('SELECT * FROM "other_table" WHERE "name" IS NULL',
+                ('SELECT * FROM "other_table" WHERE "person"."name" IS NULL',
                 [])
                 )
         q = Select('other_table', And(
@@ -136,12 +163,12 @@ class TestSelect(unittest.TestCase):
             Person['whatever'].IsNotDistinct('bar'),
             ))
         self.assertEqual(q.build(),
-                ('SELECT * FROM "other_table" WHERE "name" IS NULL AND "foo"=%s AND "baz" IS %s AND "whatever" IS DISTINCT FROM %s AND "whatever" IS NOT DISTINCT FROM %s',
+                ('SELECT * FROM "other_table" WHERE "person"."name" IS NULL AND "person"."foo"=%s AND "person"."baz" IS %s AND "person"."whatever" IS DISTINCT FROM %s AND "person"."whatever" IS NOT DISTINCT FROM %s',
                 ['bar', 'bake', 'foo', 'bar'])
                 )
         q = Select('other_table', Person['name'].IsNotNull())
         self.assertEqual(q.build(),
-                ('SELECT * FROM "other_table" WHERE "name" IS NOT NULL',
+                ('SELECT * FROM "other_table" WHERE "person"."name" IS NOT NULL',
                 [])
                 )
 
@@ -149,7 +176,7 @@ class TestSelect(unittest.TestCase):
     def test_order_by(self):
         q = Select('other_table', Person['name'] == 'Steve').order_by('id ASC')
         self.assertEqual(q.build(),
-                ('SELECT * FROM "other_table" WHERE "name"=%s ORDER BY id ASC',
+                ('SELECT * FROM "other_table" WHERE "person"."name"=%s ORDER BY id ASC',
                     ['Steve',]
                     )
                 )
@@ -159,7 +186,7 @@ class TestSelect(unittest.TestCase):
         q = Select('other_table', Person['name'] == 'Steve').order_by('id ASC'
                 ).limit(12)
         self.assertEqual(q.build(),
-                ('SELECT * FROM "other_table" WHERE "name"=%s ORDER BY id ASC LIMIT 12',
+                ('SELECT * FROM "other_table" WHERE "person"."name"=%s ORDER BY id ASC LIMIT 12',
                     ['Steve',]
                     )
                 )
@@ -169,14 +196,14 @@ class TestSelect(unittest.TestCase):
         q = Select('other_table', Person['name'] == 'Steve').order_by('id ASC'
                 ).offset(8)
         self.assertEqual(q.build(),
-                ('SELECT * FROM "other_table" WHERE "name"=%s ORDER BY id ASC OFFSET 8',
+                ('SELECT * FROM "other_table" WHERE "person"."name"=%s ORDER BY id ASC OFFSET 8',
                     ['Steve',]
                     )
                 )
         q = Select('other_table', Person['name'] == 'Steve').order_by('id ASC'
                 ).offset(8).limit(12)
         self.assertEqual(q.build(),
-                ('SELECT * FROM "other_table" WHERE "name"=%s ORDER BY id ASC LIMIT 12 OFFSET 8',
+                ('SELECT * FROM "other_table" WHERE "person"."name"=%s ORDER BY id ASC LIMIT 12 OFFSET 8',
                     ['Steve',]
                     )
                 )
@@ -185,25 +212,25 @@ class TestSelect(unittest.TestCase):
     def test_like(self):
         q = Select('other_table', Person['name'].Like('Steve'))
         self.assertEqual(q.build(),
-                ('SELECT * FROM "other_table" WHERE "name" LIKE %s',
+                ('SELECT * FROM "other_table" WHERE "person"."name" LIKE %s',
                     ['Steve',]
                     )
                 )
         q = Select('other_table', Person['name'].Ilike('Steve'))
         self.assertEqual(q.build(),
-                ('SELECT * FROM "other_table" WHERE "name" ILIKE %s',
+                ('SELECT * FROM "other_table" WHERE "person"."name" ILIKE %s',
                     ['Steve',]
                     )
                 )
         q = Select('other_table', Person['name'].Like('%Steve%'))
         self.assertEqual(q.build(),
-                ('SELECT * FROM "other_table" WHERE "name" LIKE %s',
+                ('SELECT * FROM "other_table" WHERE "person"."name" LIKE %s',
                     ['%Steve%',]
                     )
                 )
         q = Select('other_table', Person['name'].Ilike('%Steve%'))
         self.assertEqual(q.build(),
-                ('SELECT * FROM "other_table" WHERE "name" ILIKE %s',
+                ('SELECT * FROM "other_table" WHERE "person"."name" ILIKE %s',
                     ['%Steve%',]
                     )
                 )
@@ -212,16 +239,57 @@ class TestSelect(unittest.TestCase):
     def test_select_tuple(self):
         q = Select('cool_table', Person['id'].In((1,2)))
         self.assertEqual(q.build(),
-                ('SELECT * FROM "cool_table" WHERE "id" IN %s',
+                ('SELECT * FROM "cool_table" WHERE "person"."id" IN %s',
                     [(1,2),]
                     )
                 )
 
         q = Select('cool_table', Person['id'].In((1,2))).order_by('id DESC')
         self.assertEqual(q.build(),
-                ('SELECT * FROM "cool_table" WHERE "id" IN %s ORDER BY id DESC',
+                ('SELECT * FROM "cool_table" WHERE "person"."id" IN %s ORDER BY id DESC',
                     [(1,2),]
                     )
+                )
+
+
+
+
+class TestJoin(unittest.TestCase):
+
+    def test_build(self):
+        q = Join(Person['car_id'] == Car['id'])
+        self.assertEqual(q.build(),
+                ('SELECT "person".* FROM "person" JOIN "car" ON "car"."id"="person"."car_id"',
+                    [])
+                )
+        # First column is the table being joined to
+        q = Join(Car['id'] == Person['car_id'])
+        self.assertEqual(q.build(),
+                ('SELECT "car".* FROM "car" JOIN "person" ON "person"."car_id"="car"."id"',
+                    [])
+                )
+        q = Join(Person['car_id'] == Car['id'], Dept['person_id'] == Person['id'])
+        self.assertEqual(q.build(),
+                ('SELECT "person".* FROM "person" JOIN "car" ON "car"."id"="person"."car_id" JOIN "dept" ON "dept"."person_id"="person"."id"',
+                    [])
+                )
+
+
+    def test_multi_join(self):
+        q = Join(Person['car_id'] == Car['id']).LeftJoin(Dept['person_id'] == Person['id'])
+        self.assertEqual(q.build(),
+                ('SELECT "person".* FROM "person" JOIN "car" ON "car"."id"="person"."car_id" LEFT JOIN "dept" ON "dept"."person_id"="person"."id"',
+                    [])
+                )
+        q = Join(Person['dept_id'] == Dept['id']).LeftJoin(Car['dept_id'] == Dept['id'])
+        self.assertEqual(q.build(),
+                ('SELECT "person".* FROM "person" JOIN "dept" ON "dept"."id"="person"."dept_id" LEFT JOIN "car" ON "car"."dept_id"="dept"."id"',
+                    [])
+                )
+        q = Join(Person['dept_id'] == Dept['id']).LeftJoin(Dept['id'] == Car['dept_id'])
+        self.assertEqual(q.build(),
+                ('SELECT "person".* FROM "person" JOIN "dept" ON "dept"."id"="person"."dept_id" LEFT JOIN "dept" ON "dept"."id"="car"."dept_id"',
+                    [])
                 )
 
 
@@ -287,13 +355,13 @@ class TestUpdate(unittest.TestCase):
         q = Update('some_table', name='Bob', car_id=2).where(
                 Person['id']==3).returning('id')
         self.assertEqual(q.build(), (
-            'UPDATE "some_table" SET "car_id"=%s, "name"=%s WHERE "id"=%s RETURNING "id"',
+            'UPDATE "some_table" SET "car_id"=%s, "name"=%s WHERE "person"."id"=%s RETURNING "id"',
             [2, 'Bob', 3]))
 
         q = Update('some_table', name='Bob', car_id=2).where(
                 And(Person['id']==3, Person['car_id']==4)).returning('*')
         self.assertEqual(q.build(), (
-            'UPDATE "some_table" SET "car_id"=%s, "name"=%s WHERE "id"=%s AND "car_id"=%s RETURNING *',
+            'UPDATE "some_table" SET "car_id"=%s, "name"=%s WHERE "person"."id"=%s AND "person"."car_id"=%s RETURNING *',
             [2, 'Bob', 3, 4]))
 
         wheres = And()
@@ -301,7 +369,7 @@ class TestUpdate(unittest.TestCase):
         wheres += Person['car_id']==4
         q = Update('some_table', name='Bob', car_id=2).where(wheres).returning('*')
         self.assertEqual(q.build(), (
-            'UPDATE "some_table" SET "car_id"=%s, "name"=%s WHERE "id"=%s AND "car_id"=%s RETURNING *',
+            'UPDATE "some_table" SET "car_id"=%s, "name"=%s WHERE "person"."id"=%s AND "person"."car_id"=%s RETURNING *',
             [2, 'Bob', 3, 4]))
 
 
@@ -311,12 +379,12 @@ class TestDelete(unittest.TestCase):
     def test_build(self):
         q = Delete('some_table').where(Person['name']=='Bob')
         self.assertEqual(q.build(), (
-            'DELETE FROM "some_table" WHERE "name"=%s',
+            'DELETE FROM "some_table" WHERE "person"."name"=%s',
             ['Bob',]))
 
         q = Delete('some_table').where(Person['name']>='Bob')
         self.assertEqual(q.build(), (
-            'DELETE FROM "some_table" WHERE "name">=%s',
+            'DELETE FROM "some_table" WHERE "person"."name">=%s',
             ['Bob',]))
 
 

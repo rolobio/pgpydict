@@ -8,13 +8,13 @@ from sys import modules
 
 try: # pragma: no cover
     from dictorm.pg import Select, Insert, Update, Delete, And
-    from dictorm.pg import Column, Comparison, Operator
+    from dictorm.pg import Column, Comparison, Operator, Join
     from dictorm.sqlite import Insert as SqliteInsert
     from dictorm.sqlite import Column as SqliteColumn
     from dictorm.sqlite import Update as SqliteUpdate
 except ImportError: # pragma: no cover
     from .pg import Select, Insert, Update, Delete, And
-    from .pg import Column, Comparison, Operator
+    from .pg import Column, Comparison, Operator, Join
     from .sqlite import Insert as SqliteInsert
     from .sqlite import Column as SqliteColumn
     from .sqlite import Update as SqliteUpdate
@@ -390,7 +390,7 @@ class Table(object):
         self.db = db
         self.curs = db.curs
         self.pks = []
-        self.refs = {}
+        self.joins = {}
         self._refresh_pks()
         self.order_by = None
         self.fks = {}
@@ -430,7 +430,7 @@ class Table(object):
         Used to insert a row into this table.
         """
         d = Dict(self, *a, **kw)
-        for ref_name in self.refs:
+        for ref_name in self.joins:
             d[ref_name] = None
         return d
 
@@ -472,6 +472,8 @@ class Table(object):
 
         """
         # All args/kwargs are combined in an SQL And comparison
+        if len(a) == 1 and isinstance(a[0], Join):
+            return ResultsGenerator(self, a[0], self.db)
         operator_group = args_to_comp(And(), self, *a, **kw)
 
         order_by = None
@@ -545,7 +547,7 @@ class Table(object):
         return self.cached_columns_info
 
 
-    def __setitem__(self, ref_name, ref):
+    def __setitem__(self, join_name, join):
         """
         Create reference that will be gotten by all Dicts created from this
         table.
@@ -555,22 +557,21 @@ class Table(object):
 
         For more examples see Table's doc.
         """
-        if ref.column1.table != self:
+        if join.column1.table != self:
             # Dict.__getitem__ expects the columns to be in a particular order,
             # fix any order issues.
-            ref.column1, ref.column2 = ref.column2, ref.column1
-        self.fks[ref.column1.column] = ref_name
-        self.refs[ref_name] = ref
+            join.column1, join.column2 = join.column2, join.column1
+        self.fks[join.column1.column] = join_name
+        self.joins[join_name] = join
 
 
-    def __getitem__(self, ref_name):
+    def __getitem__(self, join_name):
         """
-        Get a reference if it has already been created.  Otherwise, return a
-        Column object which is used to create a reference.
+        Get a Join if it has already been created.  Otherwise, return a new Join
         """
-        if ref_name in self.refs:
-            return self.refs[ref_name]
-        return self.db.column(self, ref_name)
+        if join_name in self.joins:
+            return self.joins[join_name]
+        return self.db.column(self, join_name)
 
 
 
@@ -622,7 +623,7 @@ class Dict(dict):
         All original column/values will bet inserted/updated by this method.
         All references will be flushed as well.
         """
-        if self._table.refs:
+        if self._table.joins:
             for i in self.values():
                 if isinstance(i, Dict):
                     i.flush()
@@ -701,7 +702,7 @@ class Dict(dict):
         Return a dictionary without the key/value(s) added by a reference.  They
         should never be sent in the query to the Database.
         """
-        return dict([(k,v) for k,v in self.items() if k not in self._table.refs]
+        return dict([(k,v) for k,v in self.items() if k not in self._table.joins]
                 )
 
 
@@ -709,7 +710,7 @@ class Dict(dict):
         """
         Return a dictionary of only the referenced rows.
         """
-        return dict([(k,v) for k,v in self.items() if k in self._table.refs])
+        return dict([(k,v) for k,v in self.items() if k in self._table.joins])
 
 
     def __getitem__(self, key):
@@ -718,7 +719,7 @@ class Dict(dict):
         referenced row, get that row first.  Will only get a referenced row
         once, until the referenced row's foreign key is changed.
         """
-        ref = self._table.refs.get(key)
+        ref = self._table.joins.get(key)
         if not ref and key not in self:
             raise KeyError(str(key))
         # Only get the referenced row once, if it has a value, the reference's

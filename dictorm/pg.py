@@ -91,6 +91,114 @@ class Select(object):
         return self
 
 
+class PreJoin(object):
+    """
+    Used only to store information for join that will be created by a
+    comparison.__getitem__
+    """
+
+    def __init__(self, comp, key):
+        self.comp = comp
+        self.key = key
+
+
+    def __eq__(self, key):
+        join = Join(self.comp)
+        return join.where(join.comps[0].column2.table[self.key] == key)
+
+
+
+class Join(object):
+
+    query = 'SELECT "{table}".* FROM "{table}"{joins}{where}'
+    join_query = '"{c1.table.name}" ON {c1}={c2}'
+
+    def __init__(self, *comps, kind=''):
+        self.comps = list(comps)
+        self.kind = ' '+kind if kind else ''
+        self.ooc = None
+
+
+    def where(self, *ooc):
+        join = Join(*self.comps, kind=self.kind)
+        join.ooc = ooc
+        return join
+
+
+    def __str__(self):
+        joined_to = self.comps[0].column1.table
+        table = joined_to.name
+        formats = {'table':table,}
+        formats['joins'] = self.join_str(joined_to)
+        formats['where'] = ''
+        if self.ooc:
+            formats['where'] = ' WHERE ' + ''.join([str(i) for i in self.ooc])
+        return self.query.format(**formats)
+
+
+    def join_str(self, joined_to):
+        other_joins = []
+        my_joins = []
+        for comp in self.comps:
+            if isinstance(comp, Join):
+                other_joins.append(comp.join_str(joined_to))
+            else:
+                c1, c2 = comp.column1, comp.column2
+                if c1.table == joined_to:
+                    c1, c2 = c2, c1
+                my_joins.append(self.join_query.format(c1=c1, c2=c2))
+        query = '{kind} JOIN '.format(kind=self.kind)
+        query = query + query.join(my_joins) + ' '.join(other_joins)
+        return query
+
+
+    def values(self):
+        if self.ooc:
+            return [i.value() for i in self.ooc]
+        return []
+
+
+    def build(self):
+        return (str(self), self.values())
+
+
+    def Join(self, *comps, kind=None):
+        kind = kind or Join
+        join = kind(*comps)
+        self.comps.append(join)
+        return self
+
+
+
+class LeftJoin(Join):
+    def __init__(self, *comps):
+        super().__init__(*comps, kind='LEFT')
+
+
+
+class RightJoin(Join):
+    def __init__(self, *comps):
+        super().__init__(*comps, kind='RIGHT')
+
+
+
+class InnerJoin(Join):
+    def __init__(self, *comps):
+        super().__init__(*comps, kind='INNER')
+
+
+
+class FullOuterJoin(Join):
+    def __init__(self, *comps):
+        super().__init__(*comps, kind='FULL OUTER')
+
+
+
+class FullJoin(Join):
+    def __init__(self, *comps):
+        super().__init__(*comps, kind='FULL')
+
+
 
 class Insert(object):
 
@@ -192,6 +300,7 @@ class Delete(Update):
     query = 'DELETE FROM "{table}"'
 
 
+
 class Comparison(object):
 
     interpolation_str = '%s'
@@ -204,6 +313,7 @@ class Comparison(object):
         self._substratum = None
         self._aggregate = False
 
+
     def __repr__(self): # pragma: no cover
         if isinstance(self.column2, Null):
             ret = 'Comparison({0}{1})'.format(self.column1, self.kind)
@@ -215,10 +325,10 @@ class Comparison(object):
 
 
     def __str__(self):
-        c1 = self.column1.column
+        c1 = self.column1
         if self._null_kind():
-            return '"{0}"{1}'.format(c1, self.kind)
-        return '"{0}"{1}{2}'.format(c1, self.kind, self.interpolation_str)
+            return '"{0}"."{1}"{2}'.format(c1.table.name, c1.column, self.kind)
+        return '"{0}"."{1}"{2}{3}'.format(c1.table.name, c1.column, self.kind, self.interpolation_str)
 
 
     def value(self):
@@ -251,9 +361,14 @@ class Comparison(object):
     def Xor(self, comp2): return Xor(self, comp2)
     def And(self, comp2): return And(self, comp2)
 
+    def __getitem__(self, key):
+        return PreJoin(self, key)
 
 
-class Null(): pass
+
+class Null():
+
+    def __repr__(self): return ''
 
 
 
@@ -267,6 +382,9 @@ class Column(object):
 
     def __repr__(self): # pragma: no cover
         return '{0}.{1}'.format(self.table.name, self.column)
+
+    def __str__(self):
+        return '"{0}"."{1}"'.format(self.table.name, self.column)
 
     def many(self, column):
         c = self.comparison(self, column, '=')

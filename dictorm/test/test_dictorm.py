@@ -1,5 +1,6 @@
 #! /usr/bin/env python
 import dictorm
+from dictorm.pg import Join
 from psycopg2.extras import DictCursor
 import os
 import psycopg2
@@ -24,7 +25,9 @@ else:
             }
 
 def _no_refs(o):
-    if isinstance(o, dictorm.Dict):
+    if o == None:
+        return None
+    elif isinstance(o, dictorm.Dict):
         return o.no_refs()
     l = []
     for i in o:
@@ -1214,6 +1217,34 @@ class TestPostgresql(PostgresTestBase):
         self.assertEqualNoRefs(steve['manager'], bob)
         self.assertEqualNoRefs(bob['subordinates'], [alice, steve])
         self.assertEqualNoRefs(bob['subordinates_departments'], [it, sales, hr])
+
+
+    def test_join(self):
+        Person, Car = self.db['person'], self.db['car']
+        Person['car'] = Person['id'] == Car['person_id']
+        Car['owner'] = Car['person_id'] == Person['id']
+
+        bob = Person(name='Bob').flush()
+        aly = Person(name='Aly').flush()
+
+        bob_car = Car(name='Ford', person_id=bob['id']).flush()
+        aly_car = Car(name='Dodge', person_id=aly['id']).flush()
+
+        self.assertEqualNoRefs(bob['car'], bob_car)
+        self.assertEqualNoRefs(aly['car'], aly_car)
+
+        self.assertEqualNoRefs(
+                Person.get_where(Person['car']['name'] == 'Ford'),
+                [bob,])
+
+        self.assertEqualNoRefs(
+                Car.get_where(Car['owner']['name'] == 'Bob'),
+                [bob_car,])
+
+        self.assertEqualNoRefs(
+                Car.get_where(Join(Car['person_id'] == Person['id']
+                    ).where(Person['name'] == 'Bob')),
+                [bob_car,])
 
 
 
