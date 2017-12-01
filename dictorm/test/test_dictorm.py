@@ -70,6 +70,16 @@ class ExtraTestMethods:
 
 
 
+JSONB_SUPPORT = {
+        '902':'JSON',
+        '903':'JSON',
+        '904':'JSONB',
+        '905':'JSONB',
+        '906':'JSONB',
+        '100':'JSONB',
+        }
+
+
 class CommonTests(ExtraTestMethods):
     """
     These tests will be run for all supported databases.
@@ -77,6 +87,11 @@ class CommonTests(ExtraTestMethods):
 
     def setUp(self):
         self.conn = psycopg2.connect(**test_db_login)
+
+        # Change the schema depending on which versin of Postgres we're using
+        server_version = str(self.conn.server_version)
+        major_version = server_version[:3]
+
         self.db = dictorm.DictDB(self.conn)
         self.curs = self.db.curs
         self.tearDown()
@@ -103,19 +118,16 @@ class CommonTests(ExtraTestMethods):
             person_id INTEGER REFERENCES person(id)
         );
         ALTER TABLE person ADD COLUMN car_id INTEGER REFERENCES car(id);
-        CREATE TABLE no_pk (foo TEXT);
+        CREATE TABLE no_pk (foo VARCHAR(10));
         CREATE TABLE station (
             person_id INTEGER
         );
         CREATE TABLE possession (
             id SERIAL PRIMARY KEY,
             person_id INTEGER,
-            description JSONB
+            description {JSON_OR_JSONB}
         );
-        CREATE TABLE foo (
-            bar VARCHAR(10)
-        );
-        ''')
+        '''.format(JSON_OR_JSONB=JSONB_SUPPORT[major_version]))
         self.conn.commit()
         self.db.refresh_tables()
 
@@ -1261,13 +1273,13 @@ class TestPostgresql(CommonTests, unittest.TestCase):
 
     def test_varchar(self):
         """
-        A column name can't be used for injection
+        A varchar type raises an error when too many characters are passed.
         """
-        Foo = self.db['foo']
+        NoPk = self.db['no_pk']
         # bar is short enough
-        Foo(bar='abcdefghij').flush()
+        NoPk(foo='abcdefghij').flush()
         self.assertRaises(psycopg2.DataError,
-            Foo(bar='abcdefghijk').flush)
+            NoPk(foo='abcdefghijk').flush)
 
 
 
@@ -1308,7 +1320,7 @@ class SqliteTestBase(object):
         CREATE TABLE possession (
             id INTEGER PRIMARY KEY,
             person_id INTEGER,
-            description JSONB
+            description JSON
         );
         ''')
         self.conn.commit()

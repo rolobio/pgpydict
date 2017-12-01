@@ -1,23 +1,32 @@
+os:
+    - linux
 language: python
 python:
     - "2.7"
     - "3.4"
     - "3.5"
+env:
+    - PG_VERSION=9.2
+    - PG_VERSION=9.3
+    - PG_VERSION=9.4
+    - PG_VERSION=9.5
+    - PG_VERSION=9.6
+before_install:
+    # Stop any postgres, then start a specific version of postgres to test against
+    - sudo service postgresql stop && sudo service postgresql start $PG_VERSION
 install:
-    - "pip install -r requirements.testing.txt"
+    - "pip install -e .[postgresql]"
 before_script:
     - psql -c 'create database dictorm;' -U postgres
 script:
     # Run tests verbosely
-    - "green -vv --run-coverage dictorm"
+    - "python setup.py test -vv"
     # Test installation
     - "python setup.py install"
     #  Verify that dictorm can be imported
     - "python -c 'from dictorm import *'"
 services:
     - postgresql
-addons:
-      postgresql: "9.4"
 after_success:
     # Submit coverage report to coveralls
     coveralls
