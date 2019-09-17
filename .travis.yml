@@ -14,15 +14,19 @@ env:
   - PG_VERSION=9.5
   - PG_VERSION=9.6
   - PG_VERSION=10
+  - PG_VERSION=11
 addons:
   postgresql: "10"
   apt:
     packages:
       - postgresql-10
       - postgresql-client-10
+      - postgresql-11
+      - postgresql-client-11
 before_install:
-  # Copy postgres config for version 10
+  # Copy postgres config for version 10 and 11
   - sudo cp /etc/postgresql/{9.6,10}/main/pg_hba.conf
+  - sudo cp /etc/postgresql/{9.6,11}/main/pg_hba.conf
   # Stop any postgres, then start a specific version of postgres to test against
   - sudo service postgresql stop && sudo service postgresql start $PG_VERSION
 install:
